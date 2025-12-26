@@ -10,10 +10,12 @@ import AccountService from './AccountService';
 class RescueService {
   /**
    * Create rescue request (Layer 2: Important)
+   * Creates a rescue request when a player fails to extract items from a battle
    */
   async createRescueRequest(rescueData: CreateRescueRequest): Promise<RescueRequest> {
     const rescueId = uuid();
-    const expiresAt = new Date(rescueData.failedTime + 86400000); // 24 hours
+    // 24 hours expiration
+    const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
 
     const sql = `
       INSERT INTO rescue_requests (
@@ -26,8 +28,8 @@ class RescueService {
       rescueId,
       rescueData.playerId,
       rescueData.mapId,
-      JSON.stringify(rescueData.lostItems),
-      rescueData.totalValue,
+      JSON.stringify(rescueData.lostItems || []),
+      rescueData.totalValue || 0,
       'pending',
       500, // reward_gold
       200, // reward_exp
