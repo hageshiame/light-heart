@@ -1,0 +1,212 @@
+# Prometheus 告警规则配置
+# 
+# 用于 Light Heart 游戏服务器的性能监控和告警
+
+groups:
+  - name: "light_heart_server"
+    interval: 30s
+    rules:
+      
+      # ============ HTTP 相关告警 ============
+      
+      - alert: "HighErrorRate"
+        expr: |
+          (rate(http_errors_total[5m]) / rate(http_request_total[5m])) * 100 > 5
+        for: 5m
+        labels:
+          severity: "critical"
+        annotations:
+          summary: "高错误率告警"
+          description: "HTTP 错误率超过 5%，当前值: {{ $value | humanizePercentage }}"
+          
+      - alert: "HighResponseTime"
+        expr: |
+          histogram_quantile(0.95, rate(http_request_duration_seconds_bucket[5m])) > 1
+        for: 10m
+        labels:
+          severity: "warning"
+        annotations:
+          summary: "HTTP 响应时间过长"
+          description: "95 分位数响应时间超过 1 秒，当前值: {{ $value | humanizeDuration }}"
+          
+      - alert: "ServiceUnavailable"
+        expr: |
+          up{job="light-heart"} == 0
+        for: 2m
+        labels:
+          severity: "critical"
+        annotations:
+          summary: "服务不可用"
+          description: "Light Heart 游戏服务器无响应"
+
+      # ============ 数据库相关告警 ============
+      
+      - alert: "DatabaseSlowQuery"
+        expr: |
+          histogram_quantile(0.95, rate(db_query_duration_seconds_bucket[5m])) > 0.5
+        for: 10m
+        labels:
+          severity: "warning"
+        annotations:
+          summary: "数据库慢查询"
+          description: "数据库查询 95 分位数耗时超过 500ms，当前值: {{ $value | humanizeDuration }}"
+          
+      - alert: "DatabaseQueryErrors"
+        expr: |
+          rate(db_query_errors_total[5m]) > 0.1
+        for: 5m
+        labels:
+          severity: "warning"
+        annotations:
+          summary: "数据库查询错误"
+          description: "数据库查询错误率过高，当前值: {{ $value | humanizePercentage }}"
+          
+      - alert: "ConnectionPoolExhausted"
+        expr: |
+          db_connection_pool_available < 5
+        for: 2m
+        labels:
+          severity: "critical"
+        annotations:
+          summary: "数据库连接池耗尽"
+          description: "数据库连接池可用连接数低于 5 个，当前值: {{ $value }}"
+
+      # ============ 缓存相关告警 ============
+      
+      - alert: "LowCacheHitRate"
+        expr: |
+          cache_hit_ratio < 50
+        for: 15m
+        labels:
+          severity: "warning"
+        annotations:
+          summary: "缓存命中率过低"
+          description: "缓存命中率低于 50%，当前值: {{ $value | humanizePercentage }}"
+          
+      - alert: "CacheKeyExpired"
+        expr: |
+          (cache_misses_total / (cache_hits_total + cache_misses_total)) * 100 > 60
+        for: 10m
+        labels:
+          severity: "warning"
+        annotations:
+          summary: "缓存过期率过高"
+          description: "过期缓存占比超过 60%，需要检查缓存策略"
+
+      # ============ 游戏业务相关告警 ============
+      
+      - alert: "PlayerBattleFailureRate"
+        expr: |
+          (rate(game_battles_total{result="lose"}[1h]) / rate(game_battles_total[1h])) * 100 > 60
+        for: 30m
+        labels:
+          severity: "info"
+        annotations:
+          summary: "玩家战斗失败率较高"
+          description: "近 1 小时内玩家战斗失败率超过 60%，当前值: {{ $value | humanizePercentage }}"
+          
+      - alert: "AbnormalGameActivity"
+        expr: |
+          rate(game_score_submitted_total[5m]) > 100
+        for: 10m
+        labels:
+          severity: "warning"
+        annotations:
+          summary: "异常游戏活动"
+          description: "分数提交速率异常高，可能存在作弊，当前值: {{ $value | humanize }}/s"
+          
+      - alert: "ServerOverload"
+        expr: |
+          rate(http_request_total[5m]) > 1000
+        for: 5m
+        labels:
+          severity: "warning"
+        annotations:
+          summary: "服务器过载"
+          description: "请求速率超过 1000/s，当前值: {{ $value | humanize }}/s"
+
+      # ============ 系统资源相关告警 ============
+      
+      - alert: "HighMemoryUsage"
+        expr: |
+          process_memory_bytes / 1024 / 1024 / 1024 > 2
+        for: 10m
+        labels:
+          severity: "warning"
+        annotations:
+          summary: "内存使用过高"
+          description: "进程内存使用超过 2GB，当前值: {{ $value | humanize }}GB"
+          
+      - alert: "CriticalMemoryUsage"
+        expr: |
+          process_memory_bytes / 1024 / 1024 / 1024 > 3.5
+        for: 5m
+        labels:
+          severity: "critical"
+        annotations:
+          summary: "内存严重不足"
+          description: "进程内存使用超过 3.5GB，可能导致 OOM，当前值: {{ $value | humanize }}GB"
+          
+      - alert: "DiskSpaceRunningOut"
+        expr: |
+          node_filesystem_avail_bytes{fstype!~"tmpfs"} / node_filesystem_size_bytes < 0.1
+        for: 15m
+        labels:
+          severity: "critical"
+        annotations:
+          summary: "磁盘空间不足"
+          description: "磁盘可用空间不足 10%，需要紧急扩容"
+
+      # ============ 日志和追踪相关告警 ============
+      
+      - alert: "HighErrorLogRate"
+        expr: |
+          rate(log_errors_total[5m]) > 10
+        for: 5m
+        labels:
+          severity: "warning"
+        annotations:
+          summary: "错误日志速率过高"
+          description: "每秒错误日志超过 10 条，当前值: {{ $value | humanize }}/s"
+          
+      - alert: "LongRequestTraceLatency"
+        expr: |
+          histogram_quantile(0.99, rate(trace_request_duration_bucket[5m])) > 5
+        for: 10m
+        labels:
+          severity: "warning"
+        annotations:
+          summary: "请求追踪延迟过高"
+          description: "99 分位数追踪延迟超过 5 秒，当前值: {{ $value | humanizeDuration }}"
+
+      # ============ 队列和异步任务相关告警 ============
+      
+      - alert: "QueueBacklogHigh"
+        expr: |
+          queue_pending_jobs > 1000
+        for: 10m
+        labels:
+          severity: "warning"
+        annotations:
+          summary: "消息队列积压"
+          description: "队列中待处理任务超过 1000，当前值: {{ $value | humanize }}"
+          
+      - alert: "AsyncJobFailureRate"
+        expr: |
+          (rate(async_job_failures_total[5m]) / rate(async_job_total[5m])) * 100 > 5
+        for: 10m
+        labels:
+          severity: "warning"
+        annotations:
+          summary: "异步任务失败率过高"
+          description: "异步任务失败率超过 5%，当前值: {{ $value | humanizePercentage }}"
+
+# 告警评估规则
+evaluation_interval: 30s
+global:
+  scrape_interval: 15s
+  evaluation_interval: 30s
+  external_labels:
+    service: "light-heart-game-server"
+    environment: "production"
+    region: "cn"

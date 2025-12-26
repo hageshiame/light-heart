@@ -11,6 +11,7 @@ import RedisManager from './db/RedisManager';
 import CacheStrategy from './db/CacheStrategy';
 import tracingMiddleware, { errorTracingMiddleware } from './middleware/tracingMiddleware';
 import { loggingService } from './services/LoggingService';
+import { metricsService } from './services/MetricsService';
 
 dotenv.config();
 
@@ -55,6 +56,28 @@ app.post('/api/logging/cleanup', (req, res) => {
   const result = loggingService.cleanupOldLogs(daysRetain);
   res.json({ success: true, result });
 });
+
+// 性能指标端点（Prometheus 格式）
+app.get('/api/metrics/prometheus', (req, res) => {
+  const prometheusMetrics = metricsService.exportPrometheus();
+  res.set('Content-Type', 'text/plain');
+  res.send(prometheusMetrics);
+});
+
+// 性能指标端点（JSON 格式）
+app.get('/api/metrics/json', (req, res) => {
+  const allMetrics = metricsService.getAllMetrics();
+  res.json({ success: true, metrics: allMetrics });
+});
+
+// 重置性能指标（仅开发环境）
+if (process.env.NODE_ENV === 'development') {
+  app.post('/api/metrics/reset', (req, res) => {
+    metricsService.reset();
+    loggingService.info('Metrics reset by user', { userId: (req as any).userId });
+    res.json({ success: true, message: '性能指标已重置' });
+  });
+}
 
 // 缓存统计端点（仅用于监控）
 app.get('/api/cache/stats', async (req, res) => {
@@ -130,4 +153,4 @@ app.listen(PORT, async () => {
 });
 
 export default app;
-export { loggingService };
+export { loggingService, metricsService };

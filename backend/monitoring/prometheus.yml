@@ -1,0 +1,94 @@
+# Prometheus 配置文件
+# 用于 Light Heart 游戏服务器监控
+
+global:
+  scrape_interval: 15s           # 默认 15 秒抓取一次指标
+  evaluation_interval: 30s       # 默认 30 秒评估一次告警
+  external_labels:
+    monitor: 'light-heart-server'
+    environment: 'production'
+
+# 告警管理器配置
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets: [ 'localhost:9093' ]
+
+# 加载告警规则
+rule_files:
+  - 'prometheus-alerts.yml'
+
+scrape_configs:
+  # Light Heart 游戏服务器
+  - job_name: 'light-heart'
+    static_configs:
+      - targets: [ 'localhost:3000' ]
+    metrics_path: '/api/metrics/prometheus'
+    scrape_interval: 15s
+    scrape_timeout: 10s
+    
+    # 调整标签
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: instance
+      - source_labels: [__metrics_path__]
+        target_label: __metrics_path__
+        replacement: '/api/metrics/prometheus'
+        
+    # 保留指标
+    metric_relabel_configs:
+      - source_labels: [__name__]
+        regex: 'http_|db_|cache_|game_|process_|log_|queue_|async_job_'
+        action: keep
+
+  # Node Exporter（系统资源监控）
+  - job_name: 'node'
+    static_configs:
+      - targets: [ 'localhost:9100' ]
+    scrape_interval: 30s
+    scrape_timeout: 10s
+    
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: instance
+        replacement: 'game-server-1'
+
+  # Redis Exporter（缓存监控）
+  - job_name: 'redis'
+    static_configs:
+      - targets: [ 'localhost:6379' ]
+    scrape_interval: 30s
+    scrape_timeout: 10s
+    
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: instance
+        replacement: 'redis-1'
+
+  # MySQL Exporter（数据库监控）
+  - job_name: 'mysql'
+    static_configs:
+      - targets: [ 'localhost:9104' ]
+    scrape_interval: 30s
+    scrape_timeout: 10s
+    
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: instance
+        replacement: 'mysql-1'
+
+# 远程存储配置（可选）
+remote_write:
+  - url: "http://localhost:9009/api/v1/push"  # Victoria Metrics 远程存储
+    queue_config:
+      capacity: 10000
+      max_shards: 200
+      min_shards: 1
+      max_samples_per_send: 500
+      batch_send_wait: 5s
+      batch_send_timeout: 5s
+      retry_on_http_429: true
+
+# 记录规则（用于优化查询性能）
+rule_files:
+  - 'prometheus-rules.yml'
