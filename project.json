@@ -1,0 +1,46 @@
+{
+  "engine": "3.8.1",
+  "project_type": "2d",
+  "creator-version": "3.8.1",
+  "assets": "assets",
+  "scenes": [
+    {
+      "url": "db://assets/scenes/GameScene.scene",
+      "displayName": "Game Scene"
+    }
+  ],
+  "groups": [
+    {
+      "name": "default"
+    }
+  ],
+  "settings": {
+    "physics": {
+      "enabled": false,
+      "enabledCollisions": false
+    },
+    "collisionMatrix": [
+      []
+    ],
+    "groupCollisionMatrix": [
+      []
+    ],
+    "scriptLanguage": "typescript",
+    "moduleFormat": "esm",
+    "renderPipeline": "builtin-forward"
+  },
+  "buildConfigs": {
+    "web-desktop": {
+      "buildPath": "build/web-desktop",
+      "renderPipeline": "builtin-forward",
+      "packages": [],
+      "startScene": "db://assets/scenes/GameScene.scene"
+    },
+    "wechatgame": {
+      "buildPath": "build/wechatgame",
+      "renderPipeline": "builtin-forward",
+      "packages": [],
+      "startScene": "db://assets/scenes/GameScene.scene"
+    }
+  }
+}
