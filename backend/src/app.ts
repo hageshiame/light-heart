@@ -9,6 +9,8 @@ import { authMiddleware, optionalAuthMiddleware, errorHandler } from './middlewa
 import { ipRateLimit, playerRateLimit } from './middleware/rate-limit';
 import RedisManager from './db/RedisManager';
 import CacheStrategy from './db/CacheStrategy';
+import tracingMiddleware, { errorTracingMiddleware } from './middleware/tracingMiddleware';
+import { loggingService } from './services/LoggingService';
 
 dotenv.config();
 
@@ -32,16 +34,26 @@ app.use(cors({
   credentials: true
 }));
 
+// 链路追踪中间件（最先）
+app.use(tracingMiddleware());
+
 // 速率限制（全局）
 app.use(ipRateLimit({
   windowMs: 15 * 60 * 1000,  // 15 分钟
   max: 100                    // 100 请求
 }));
 
-// 请求日志中间件
-app.use((req, res, next) => {
-  console.log(`[${new Date().toISOString()}] ${req.method} ${req.path}`);
-  next();
+// 日志统计端点
+app.get('/api/logging/stats', (req, res) => {
+  const stats = loggingService.getLogStats();
+  res.json({ success: true, logging: stats });
+});
+
+// 日志清理端点（仅管理员）
+app.post('/api/logging/cleanup', (req, res) => {
+  const daysRetain = req.body.daysRetain || 30;
+  const result = loggingService.cleanupOldLogs(daysRetain);
+  res.json({ success: true, result });
 });
 
 // 缓存统计端点（仅用于监控）
@@ -54,13 +66,20 @@ app.get('/api/cache/stats', async (req, res) => {
 if (process.env.NODE_ENV === 'development') {
   app.post('/api/cache/clear', async (req, res) => {
     await CacheStrategy.clearAll();
+    loggingService.info('Cache cleared by user', { userId: (req as any).userId });
     res.json({ success: true, message: '缓存已清除' });
   });
 }
 
 // 健康检查（无需认证）
 app.get('/health', (req, res) => {
-  res.json({ status: 'ok', timestamp: new Date().toISOString() });
+  const traceId = res.getHeader('x-trace-id');
+  loggingService.debug('Health check', { traceId });
+  res.json({ 
+    status: 'ok', 
+    timestamp: new Date().toISOString(),
+    traceId
+  });
 });
 
 // 认证路由（无需认证）
@@ -81,9 +100,13 @@ app.use((req, res) => {
     success: false,
     error: 'NOT_FOUND',
     message: 'Endpoint not found',
-    path: req.path
+    path: req.path,
+    traceId: res.getHeader('x-trace-id')
   });
 });
+
+// 链路追踪错误处理中间件（在通用错误处理之前）
+app.use(errorTracingMiddleware());
 
 // 错误处理中间件（必须在所有其他中间件之后）
 app.use(errorHandler);
@@ -92,9 +115,19 @@ app.listen(PORT, async () => {
   console.log(`🚀 Server is running on http://localhost:${PORT}`);
   console.log(`📝 Environment: ${process.env.NODE_ENV || 'development'}`);
   
+  // 记录服务启动事件
+  loggingService.info('Server started', {
+    port: PORT,
+    environment: process.env.NODE_ENV || 'development',
+    timestamp: new Date().toISOString()
+  });
+  
   // 预热缓存
   if (RedisManager.isConnected()) {
     await CacheStrategy.warmupCache();
+    loggingService.info('Cache warmed up successfully');
   }
 });
 
+export default app;
+export { loggingService };
