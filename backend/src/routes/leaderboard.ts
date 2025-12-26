@@ -3,6 +3,8 @@ import crypto from 'crypto';
 import BattleService from '../services/BattleService';
 import AccountService from '../services/AccountService';
 import DatabaseManager from '../db/DatabaseManager';
+import { authMiddleware, AuthenticatedRequest } from '../middleware/auth';
+import { criticalOperationRateLimit } from '../middleware/rate-limit';
 
 const router = Router();
 const battleService = BattleService;
@@ -12,9 +14,9 @@ const dbManager = DatabaseManager;
 /**
  * POST /api/leaderboard/submit-score
  * Layer 1: Critical - Submit battle score with signature verification
- * Records player battle results and updates leaderboard cache
+ * 需要认证，使用关键操作限制
  */
-router.post('/submit-score', async (req: Request, res: Response) => {
+router.post('/submit-score', authMiddleware, criticalOperationRateLimit(), async (req: AuthenticatedRequest, res: Response) => {
   try {
     if (!dbManager.isInitialized()) {
       await dbManager.initialize();
