@@ -413,6 +413,58 @@ export enum RescueStatus {
 }
 
 // ============================================================
+// Game Scene & Gameplay
+// ============================================================
+
+export enum GameState {
+  CAMP = 'camp',              // 营地（选择角色、装备）
+  MAP_SELECT = 'map_select',  // 地图选择
+  SEARCHING = 'searching',    // 搜寻阶段
+  BATTLE = 'battle',          // 战斗阶段
+  EXTRACTION = 'extraction',  // 撤离阶段
+  SETTLEMENT = 'settlement'   // 结算界面
+}
+
+export interface MapData {
+  id: string;
+  name: string;
+  difficulty: 'normal' | 'hard' | 'hell';
+  timeLimit: number;          // 秒数
+  enemies: number;            // 预计敌人数量
+  recommendedLevel?: number;
+  expectedRewards?: number;
+}
+
+export interface GameResult {
+  success: boolean;
+  score: number;
+  loot: Item[];
+  extractSuccess: boolean;
+  duration: number;           // 游戏耗时（秒）
+  damageDealt: number;
+  damageReceived: number;
+}
+
+export interface BattleUnit {
+  id: string;
+  name: string;
+  level: number;
+  hp: number;
+  maxHp: number;
+  atk: number;
+  def: number;
+  spd: number;
+  isDead?: boolean;
+}
+
+export interface BattleAction {
+  actor: BattleUnit;
+  target: BattleUnit;
+  skill: 'attack' | 'defend' | 'skill' | string;
+  damage: number;
+}
+
+// ============================================================
 // Export Type Unions
 // ============================================================
 
