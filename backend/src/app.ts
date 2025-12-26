@@ -5,6 +5,7 @@ import authRouter from './routes/auth';
 import leaderboardRouter from './routes/leaderboard';
 import rescueRouter from './routes/rescue';
 import syncRouter from './routes/sync';
+import socialRouter from './routes/social';
 import { authMiddleware, optionalAuthMiddleware, errorHandler } from './middleware/auth';
 import { ipRateLimit, playerRateLimit } from './middleware/rate-limit';
 import RedisManager from './db/RedisManager';
@@ -110,6 +111,9 @@ app.use('/api/auth', authRouter);
 
 // 排行榜路由（某些端点需要认证）
 app.use('/api/leaderboard', leaderboardRouter);
+
+// 社交路由（需要认证）
+app.use('/api/social', authMiddleware, socialRouter);
 
 // 救援路由（需要认证）
 app.use('/api/rescue', authMiddleware, playerRateLimit(), rescueRouter);
