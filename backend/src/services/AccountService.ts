@@ -1,5 +1,6 @@
 import { v4 as uuid } from 'uuid';
 import DatabaseManager from '../db/DatabaseManager';
+import CacheStrategy from '../db/CacheStrategy';
 import { Account, LoginRequest, LoginResponse } from '../types/index';
 import jwt from 'jsonwebtoken';
 
@@ -31,9 +32,16 @@ class AccountService {
   }
 
   /**
-   * Get account by ID
+   * Get account by ID (with cache)
    */
   async getAccountById(playerId: string): Promise<Account | null> {
+    // 尝试从缓存获取
+    const cachedAccount = await CacheStrategy.getPlayerData<Account>(playerId);
+    if (cachedAccount) {
+      console.log(`✓ 缓存命中: player:data:${playerId}`);
+      return cachedAccount;
+    }
+
     const sql = `
       SELECT id, wechat_openid, wechat_nickname, wechat_avatar_url, level, exp, gold, 
              created_at, last_login, last_sync
@@ -41,7 +49,14 @@ class AccountService {
       WHERE id = ? AND deleted_at IS NULL
     `;
 
-    return DatabaseManager.queryOne<Account>(sql, [playerId]);
+    const account = await DatabaseManager.queryOne<Account>(sql, [playerId]);
+    
+    // 写入缓存
+    if (account) {
+      await CacheStrategy.setPlayerData(playerId, account);
+    }
+    
+    return account;
   }
 
   /**
@@ -69,6 +84,9 @@ class AccountService {
     `;
 
     await DatabaseManager.update(sql, [playerId]);
+    
+    // 清除缓存
+    await CacheStrategy.invalidatePlayerData(playerId);
   }
 
   /**
@@ -82,6 +100,9 @@ class AccountService {
     `;
 
     await DatabaseManager.update(sql, [playerId]);
+    
+    // 清除缓存
+    await CacheStrategy.invalidatePlayerData(playerId);
   }
 
   /**
@@ -95,6 +116,9 @@ class AccountService {
     `;
 
     await DatabaseManager.update(sql, [amount, playerId]);
+    
+    // 清除缓存
+    await CacheStrategy.invalidatePlayerData(playerId);
   }
 
   /**
@@ -108,6 +132,9 @@ class AccountService {
     `;
 
     await DatabaseManager.update(sql, [amount, playerId]);
+    
+    // 清除缓存
+    await CacheStrategy.invalidatePlayerData(playerId);
   }
 
   /**

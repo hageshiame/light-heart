@@ -1,5 +1,6 @@
 import { v4 as uuid } from 'uuid';
 import DatabaseManager from '../db/DatabaseManager';
+import CacheStrategy from '../db/CacheStrategy';
 import { BattleRecord, SubmitScoreRequest, LeaderboardEntry } from '../types/index';
 
 /**
@@ -56,9 +57,17 @@ class BattleService {
   }
 
   /**
-   * Get player's battle history
+   * Get player's battle history (with cache)
    */
   async getPlayerBattleHistory(playerId: string, limit: number = 20, offset: number = 0): Promise<BattleRecord[]> {
+    // 尝试从缓存获取
+    const cacheKey = `battle-history-${playerId}-${limit}-${offset}`;
+    const cachedData = await CacheStrategy.getBattleHistory<BattleRecord[]>(playerId, limit, offset);
+    if (cachedData) {
+      console.log(`✓ 缓存命中: ${cacheKey}`);
+      return cachedData;
+    }
+
     const sql = `
       SELECT id, player_id, map_id, character_id, score, damage_dealt, damage_received,
              clear_time, extract_success, created_at
@@ -68,13 +77,26 @@ class BattleService {
       LIMIT ? OFFSET ?
     `;
 
-    return DatabaseManager.query<BattleRecord>(sql, [playerId, limit, offset]);
+    const records = await DatabaseManager.query<BattleRecord>(sql, [playerId, limit, offset]);
+    
+    // 写入缓存
+    await CacheStrategy.setBattleHistory(playerId, records, limit, offset);
+    return records;
   }
 
   /**
-   * Get leaderboard rankings by map
+   * Get leaderboard rankings by map (with cache)
    */
   async getLeaderboard(mapId?: string, limit: number = 100, offset: number = 0): Promise<LeaderboardEntry[]> {
+    // 尝试从缓存获取
+    if (mapId) {
+      const cachedLeaderboard = await CacheStrategy.getLeaderboard<LeaderboardEntry[]>(mapId);
+      if (cachedLeaderboard) {
+        console.log(`✓ 缓存命中: leaderboard:${mapId}`);
+        return cachedLeaderboard.slice(offset, offset + limit);
+      }
+    }
+
     let sql = `
       SELECT 
         ROW_NUMBER() OVER (ORDER BY br.score DESC) as rank,
@@ -97,13 +119,31 @@ class BattleService {
     sql += ` ORDER BY br.score DESC LIMIT ? OFFSET ?`;
     values.push(limit, offset);
 
-    return DatabaseManager.query<LeaderboardEntry>(sql, values);
+    const leaderboard = await DatabaseManager.query<LeaderboardEntry>(sql, values);
+    
+    // 写入缓存（仅缓存完整排行榜）
+    if (mapId && offset === 0) {
+      const fullLeaderboardSql = sql.replace('LIMIT ? OFFSET ?', '');
+      const fullLeaderboard = await DatabaseManager.query<LeaderboardEntry>(fullLeaderboardSql, values.slice(0, -2));
+      await CacheStrategy.setLeaderboard(mapId, fullLeaderboard);
+    }
+    
+    return leaderboard;
   }
 
   /**
-   * Get player's rank on leaderboard
+   * Get player's rank on leaderboard (with cache)
    */
   async getPlayerRank(playerId: string, mapId?: string): Promise<number> {
+    // 尝试从缓存获取
+    if (mapId) {
+      const cachedRank = await CacheStrategy.getPlayerRank<number>(playerId, mapId);
+      if (cachedRank !== null) {
+        console.log(`✓ 缓存命中: player:rank:${playerId}:map:${mapId}`);
+        return cachedRank;
+      }
+    }
+
     let sql = `
       SELECT COUNT(*) + 1 as rank
       FROM battle_records br1
@@ -122,25 +162,31 @@ class BattleService {
     }
 
     const result = await DatabaseManager.queryOne<{ rank: number }>(sql, values);
-    return result?.rank || 1;
+    const rank = result?.rank || 1;
+    
+    // 写入缓存
+    if (mapId) {
+      await CacheStrategy.setPlayerRank(playerId, mapId, rank);
+    }
+    
+    return rank;
   }
 
   /**
-   * Update leaderboard cache
+   * Update leaderboard cache (database + Redis)
    */
   private async updateLeaderboardCache(
     playerId: string,
     mapId: string,
     score: number
   ): Promise<void> {
-    // Check if entry exists
+    // 更新数据库缓存表
     const exists = await DatabaseManager.queryOne<{ id: string }>(
       'SELECT id FROM leaderboard_cache WHERE player_id = ? AND map_id = ?',
       [playerId, mapId]
     );
 
     if (exists) {
-      // Update existing
       const sql = `
         UPDATE leaderboard_cache
         SET score = GREATEST(score, ?), updated_at = NOW()
@@ -148,7 +194,6 @@ class BattleService {
       `;
       await DatabaseManager.update(sql, [score, playerId, mapId]);
     } else {
-      // Insert new
       const cacheId = uuid();
       const sql = `
         INSERT INTO leaderboard_cache (id, player_id, map_id, score, cached_at, updated_at)
@@ -156,6 +201,13 @@ class BattleService {
       `;
       await DatabaseManager.insert(sql, [cacheId, playerId, mapId, score]);
     }
+    
+    // 清除 Redis 排行榜缓存
+    await CacheStrategy.invalidateLeaderboard(mapId);
+    // 清除玩家排名缓存
+    await CacheStrategy.invalidatePlayerRank(playerId, mapId);
+    // 清除战斗历史缓存
+    await CacheStrategy.invalidateBattleHistory(playerId);
   }
 
   /**
